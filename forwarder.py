@@ -7,6 +7,20 @@ import socket
 import time
 
 
+def vanilla_line_formatter(metric):
+    return metric['name'] + ':' + str(metric['n']) + '|g'
+
+
+def dogstatsd_line_formatter(metric):
+    return metric['name'] + ':' + str(metric['n']) + '|g|#' + ','.join(metric['tags'])
+
+
+FLAVOR_LINE_FORMATTERS = {
+        'vanilla': vanilla_line_formatter,
+        'dogstatsd': dogstatsd_line_formatter,
+}
+
+
 def normalize_metric_name(name):
     """
     Makes the name conform to common naming conventions and limitations:
@@ -23,8 +37,8 @@ def normalize_metric_name(name):
     return name[:200]
 
 
-def statsd_lines_from_samples_data(game_data, samples_data, flavor):
-    lines = []
+def metrics_from_samples_data(game_data, samples_data):
+    metrics = []
 
     for entity in samples_data['entities']:
         settings = entity['settings']
@@ -71,12 +85,9 @@ def statsd_lines_from_samples_data(game_data, samples_data, flavor):
                             'tags': tags + ['signal_type:' + signal_type, 'signal_name:' + signal_name],
                         }
 
-        if flavor == 'dogstatsd' and tags:
-            lines.extend([name + ':' + str(g['n']) + '|g|#' + ','.join(g['tags']) for g in gauges.values()])
-        else:
-            lines.extend([name + ':' + str(g['n']) + '|g' for g in gauges.values()])
+        metrics.extend(gauges.values())
 
-    return lines
+    return metrics
 
 
 def statsd_packets_from_lines(lines, max_size):
@@ -99,8 +110,7 @@ def parse_args():
 
     parser = argparse.ArgumentParser(description='forwards metrics from factorio to statsd')
     parser.add_argument('--factorio-script-output', type=str, default=default_script_output, help='the path to factorio\'s script-output directory (default: {})'.format(default_script_output))
-    parser.add_argument('--statsd-flavor', type=str, choices=['vanilla', 'dogstatsd'], default='vanilla', help='the flavor of statsd to use (note that vanilla statsd does not currently support tags)')
-    parser.add_argument('--statsd-port', type=int, default=8125, help='the port that statsd is listening on (default: 8125)')
+    parser.add_argument('--statsd-flavor', type=str, choices=FLAVOR_LINE_FORMATTERS.keys(), default='vanilla', help='the flavor of statsd to use')
     parser.add_argument('--statsd-host', type=str, default='127.0.0.1', help='the host where statsd is listening (default: 127.0.0.1)')
 
     return parser.parse_args()
@@ -109,6 +119,7 @@ def parse_args():
 def monitor_and_forward(data_path, samples_path, statsd_host, statsd_port, statsd_flavor):
     last_game_data_mod_time = 0
     game_data = None
+    line_formatter = FLAVOR_LINE_FORMATTERS[statsd_flavor]
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     while True:
@@ -132,7 +143,8 @@ def monitor_and_forward(data_path, samples_path, statsd_host, statsd_port, stats
                 samples = json.load(f)
             os.unlink(samples_path)
 
-            statsd_lines = statsd_lines_from_samples_data(game_data, samples, statsd_flavor)
+            metrics = metrics_from_samples_data(game_data, samples)
+            statsd_lines = (line_formatter(m) for m in metrics)
             packets = statsd_packets_from_lines(statsd_lines, 1432)
             if packets:
                 for packet in packets:
