@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import itertools
 import json
 import logging
 import os
@@ -8,11 +9,16 @@ import time
 
 
 def vanilla_line_formatter(metric):
-    return metric['name'] + ':' + str(metric['n']) + '|g'
+    converted_tags = ('='.join(t.split(':', 1)) for t in metric['tags'])
+    series_with_tags = ';'.join(itertools.chain([metric['name']], converted_tags))
+    return f"{series_with_tags}:{metric['n']}|g"
 
 
 def dogstatsd_line_formatter(metric):
-    return metric['name'] + ':' + str(metric['n']) + '|g|#' + ','.join(metric['tags'])
+    line = metric['name'] + ':' + str(metric['n']) + '|g'
+    if metric['tags']:
+        line += '|#' + ','.join(metric['tags'])
+    return line
 
 
 FLAVOR_LINE_FORMATTERS = {

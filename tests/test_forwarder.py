@@ -1,16 +1,25 @@
-from forwarder import metrics_from_samples_data, statsd_packets_from_lines, FLAVOR_LINE_FORMATTERS
 import pytest
+
+from forwarder import FLAVOR_LINE_FORMATTERS, metrics_from_samples_data, statsd_packets_from_lines
 
 
 @pytest.mark.parametrize('test_flavor,expected_line', [
-    ('vanilla', 'my_metric:2|g'),
+    ('vanilla', 'my_metric;base=alpha;planet=nauvis;ores;signal_type=item;signal_name=coal:2|g'),
     ('dogstatsd', 'my_metric:2|g|#base:alpha,planet:nauvis,ores,signal_type:item,signal_name:coal')
 ])
-def test_vanilla_line_formatter(test_flavor, expected_line):
+def test_vanilla_line_formatter_with_tags(test_flavor, expected_line):
     test_metrics = {'name': 'my_metric', 'n': 2, 'tags': ['base:alpha', 'planet:nauvis', 'ores', 'signal_type:item', 'signal_name:coal']}
 
     line_formatter = FLAVOR_LINE_FORMATTERS[test_flavor]
     assert line_formatter(test_metrics) == expected_line
+
+
+@pytest.mark.parametrize('test_flavor', ['vanilla', 'dogstatsd'])
+def test_vanilla_line_formatter_no_tags(test_flavor):
+    test_metrics = {'name': 'my_metric', 'n': 2, 'tags': []}
+
+    line_formatter = FLAVOR_LINE_FORMATTERS[test_flavor]
+    assert line_formatter(test_metrics) == 'my_metric:2|g'
 
 
 def test_metrics_from_samples_data_no_data():
