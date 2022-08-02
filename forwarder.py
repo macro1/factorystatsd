@@ -17,102 +17,102 @@ def normalize_metric_name(name):
         * The result will not exceed 200 characters.
     """
     if not name[0].isalpha():
-        name = 'x' + name
+        name = "x" + name
     name = name.lower()
-    name = ''.join(['_' if not c.isalnum() and c != '_' and c != '.' else c for c in name])
+    name = "".join(["_" if not c.isalnum() and c != "_" and c != "." else c for c in name])
     return name[:200]
 
 
 def statsd_lines_from_samples_data(game_data, samples_data, flavor):
     lines = []
 
-    for entity in samples_data['entities']:
-        settings = entity['settings']
-        if not settings['name']:
+    for entity in samples_data["entities"]:
+        settings = entity["settings"]
+        if not settings["name"]:
             continue
-        name = normalize_metric_name(settings['name'])
+        name = normalize_metric_name(settings["name"])
         gauges = {}
 
         tags = []
-        for kv in settings['tags'].split(','):
-            parts = kv.split('=', 1)
+        for kv in settings["tags"].split(","):
+            parts = kv.split("=", 1)
             if len(parts) > 1:
-                tags.append(parts[0]+':'+parts[1])
+                tags.append(parts[0] + ":" + parts[1])
             else:
                 tags.append(parts[0])
 
-        for signals in [entity.get('red_signals', []), entity.get('green_signals', [])]:
+        for signals in [entity.get("red_signals", []), entity.get("green_signals", [])]:
             for signal in signals:
-                signal_type_name = signal['signal']['type'] + '.' + signal['signal']['name']
-                key = name + '|' + signal_type_name
+                signal_type_name = signal["signal"]["type"] + "." + signal["signal"]["name"]
+                key = name + "|" + signal_type_name
                 gauge = gauges.get(key, None)
                 if gauge is None:
                     gauges[key] = {
-                        'name': name,
-                        'n': signal['count'],
-                        'tags': tags + ['signal_type:' + signal['signal']['type'], 'signal_name:' + signal['signal']['name']],
+                        "name": name,
+                        "n": signal["count"],
+                        "tags": tags + ["signal_type:" + signal["signal"]["type"], "signal_name:" + signal["signal"]["name"]],
                     }
                 else:
-                    gauge['n'] += signal['count']
+                    gauge["n"] += signal["count"]
 
-        if settings['absent_signals'] == 'treat-as-0':
+        if settings["absent_signals"] == "treat-as-0":
             for signal_type, signal_names in [
-                ('virtual', game_data['virtual_signal_names']),
-                ('item', game_data['item_names']),
-                ('fluid', game_data['fluid_names']),
+                ("virtual", game_data["virtual_signal_names"]),
+                ("item", game_data["item_names"]),
+                ("fluid", game_data["fluid_names"]),
             ]:
                 for signal_name in signal_names:
-                    signal_type_name = signal_type + '.' + signal_name
-                    key = name + '|' + signal_type_name
+                    signal_type_name = signal_type + "." + signal_name
+                    key = name + "|" + signal_type_name
                     if key not in gauges:
                         gauges[key] = {
-                            'name': name,
-                            'n': 0,
-                            'tags': tags + ['signal_type:' + signal_type, 'signal_name:' + signal_name],
+                            "name": name,
+                            "n": 0,
+                            "tags": tags + ["signal_type:" + signal_type, "signal_name:" + signal_name],
                         }
 
-        if flavor == 'dogstatsd' and tags:
-            lines.extend([name + ':' + str(g['n']) + '|g|#' + ','.join(g['tags']) for g in gauges.values()])
+        if flavor == "dogstatsd" and tags:
+            lines.extend([name + ":" + str(g["n"]) + "|g|#" + ",".join(g["tags"]) for g in gauges.values()])
         else:
-            lines.extend([name + ':' + str(g['n']) + '|g' for g in gauges.values()])
+            lines.extend([name + ":" + str(g["n"]) + "|g" for g in gauges.values()])
 
     return lines
 
 
 def statsd_packets_from_lines(lines, max_size):
-    buf = ''
+    buf = ""
     ret = []
     for line in lines:
         if len(buf) + 1 + len(line) > max_size:
-            ret.append(buf.encode('utf-8'))
-            buf = ''
+            ret.append(buf.encode("utf-8"))
+            buf = ""
         if buf:
-            buf += '\n'
+            buf += "\n"
         buf += line
     if buf:
-        ret.append(buf.encode('utf-8'))
+        ret.append(buf.encode("utf-8"))
     return ret
 
 
-if __name__ == '__main__':
-    default_script_output = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'script-output')
+if __name__ == "__main__":
+    default_script_output = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "script-output")
 
-    parser = argparse.ArgumentParser(description='forwards metrics from factorio to statsd')
-    parser.add_argument('--factorio-script-output', type=str, default=default_script_output, help='the path to factorio\'s script-output directory (default: {})'.format(default_script_output))
-    parser.add_argument('--statsd-flavor', type=str, choices=['vanilla', 'dogstatsd'], default='vanilla', help='the flavor of statsd to use (note that vanilla statsd does not currently support tags)')
-    parser.add_argument('--statsd-port', type=int, default=8125, help='the port that statsd is listening on (default: 8125)')
-    parser.add_argument('--statsd-host', type=str, default='127.0.0.1', help='the host where statsd is listening (default: 127.0.0.1)')
+    parser = argparse.ArgumentParser(description="forwards metrics from factorio to statsd")
+    parser.add_argument("--factorio-script-output", type=str, default=default_script_output, help="the path to factorio's script-output directory (default: {})".format(default_script_output))
+    parser.add_argument("--statsd-flavor", type=str, choices=["vanilla", "dogstatsd"], default="vanilla", help="the flavor of statsd to use (note that vanilla statsd does not currently support tags)")
+    parser.add_argument("--statsd-port", type=int, default=8125, help="the port that statsd is listening on (default: 8125)")
+    parser.add_argument("--statsd-host", type=str, default="127.0.0.1", help="the host where statsd is listening (default: 127.0.0.1)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
     if not os.path.exists(os.path.dirname(args.factorio_script_output)):
-        logging.critical('factorio not found at script output path. please check --factorio-script-output')
+        logging.critical("factorio not found at script output path. please check --factorio-script-output")
 
-    logging.info('forwarding data from ' + args.factorio_script_output)
+    logging.info("forwarding data from " + args.factorio_script_output)
 
-    data_path = os.path.join(args.factorio_script_output, 'factorystatsd-game-data.json')
-    samples_path = os.path.join(args.factorio_script_output, 'factorystatsd-samples.json')
+    data_path = os.path.join(args.factorio_script_output, "factorystatsd-game-data.json")
+    samples_path = os.path.join(args.factorio_script_output, "factorystatsd-samples.json")
 
     last_game_data_mod_time = 0
     game_data = None
@@ -129,7 +129,7 @@ if __name__ == '__main__':
             if game_data is None or game_data_mod_time > last_game_data_mod_time:
                 with open(data_path) as f:
                     game_data = json.load(f)
-                logging.info('loaded game data')
+                logging.info("loaded game data")
             last_game_data_mod_time = game_data_mod_time
 
             if not os.path.exists(samples_path):
@@ -145,7 +145,7 @@ if __name__ == '__main__':
             if packets:
                 for packet in packets:
                     sock.sendto(packet, (args.statsd_host, args.statsd_port))
-                logging.info('sent {} packets to statsd'.format(len(packets)))
+                logging.info("sent {} packets to statsd".format(len(packets)))
         except Exception:
-            logging.exception('forwarder exception')
+            logging.exception("forwarder exception")
             time.sleep(1.0)
