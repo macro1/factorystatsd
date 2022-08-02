@@ -94,7 +94,7 @@ def statsd_packets_from_lines(lines, max_size):
     return ret
 
 
-if __name__ == '__main__':
+def parse_args():
     default_script_output = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'script-output')
 
     parser = argparse.ArgumentParser(description='forwards metrics from factorio to statsd')
@@ -102,23 +102,15 @@ if __name__ == '__main__':
     parser.add_argument('--statsd-flavor', type=str, choices=['vanilla', 'dogstatsd'], default='vanilla', help='the flavor of statsd to use (note that vanilla statsd does not currently support tags)')
     parser.add_argument('--statsd-port', type=int, default=8125, help='the port that statsd is listening on (default: 8125)')
     parser.add_argument('--statsd-host', type=str, default='127.0.0.1', help='the host where statsd is listening (default: 127.0.0.1)')
-    args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    return parser.parse_args()
 
-    if not os.path.exists(os.path.dirname(args.factorio_script_output)):
-        logging.critical('factorio not found at script output path. please check --factorio-script-output')
 
-    logging.info('forwarding data from ' + args.factorio_script_output)
-
-    data_path = os.path.join(args.factorio_script_output, 'factorystatsd-game-data.json')
-    samples_path = os.path.join(args.factorio_script_output, 'factorystatsd-samples.json')
-
+def monitor_and_forward(data_path, samples_path, statsd_host, statsd_port, statsd_flavor):
     last_game_data_mod_time = 0
     game_data = None
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
     while True:
         try:
             if not os.path.exists(data_path):
@@ -140,12 +132,35 @@ if __name__ == '__main__':
                 samples = json.load(f)
             os.unlink(samples_path)
 
-            statsd_lines = statsd_lines_from_samples_data(game_data, samples, args.statsd_flavor)
+            statsd_lines = statsd_lines_from_samples_data(game_data, samples, statsd_flavor)
             packets = statsd_packets_from_lines(statsd_lines, 1432)
             if packets:
                 for packet in packets:
-                    sock.sendto(packet, (args.statsd_host, args.statsd_port))
+                    sock.sendto(packet, (statsd_host, statsd_port))
                 logging.info('sent {} packets to statsd'.format(len(packets)))
         except Exception:
             logging.exception('forwarder exception')
             time.sleep(1.0)
+
+
+def main():
+    args = parse_args()
+
+    logging.basicConfig(level=logging.INFO)
+
+    if not os.path.exists(os.path.dirname(args.factorio_script_output)):
+        logging.critical('factorio not found at script output path. please check --factorio-script-output')
+
+    logging.info('forwarding data from ' + args.factorio_script_output)
+
+    monitor_and_forward(
+        data_path=os.path.join(args.factorio_script_output, 'factorystatsd-game-data.json'),
+        samples_path=os.path.join(args.factorio_script_output, 'factorystatsd-samples.json'),
+        statsd_host=args.statsd_host,
+        statsd_port=args.statsd_port,
+        statsd_flavor=args.statsd_flavor
+    )
+
+
+if __name__ == '__main__':
+    main()
